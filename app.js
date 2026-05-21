@@ -1160,4 +1160,147 @@
   // Ensure disabled number inputs don't show browser-default "0" before any SVG is loaded
   dimX.value = '';
   dimY.value = '';
+
+  // ── Text tool ─────────────────────────────────────────────────────────────
+
+  const GOOGLE_FONTS = [
+    'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Oswald',
+    'Raleway', 'Ubuntu', 'Nunito', 'Poppins', 'Inter',
+    'Bebas Neue', 'Anton', 'Merriweather', 'Playfair Display', 'Teko',
+  ];
+
+  const fontCache = {};
+  const fontFamilySelect = document.getElementById('font-family');
+  GOOGLE_FONTS.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.textContent = f;
+    fontFamilySelect.appendChild(opt);
+  });
+
+  async function loadGoogleFont(family) {
+    if (fontCache[family]) return fontCache[family];
+    const css = await fetch(
+      `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}&display=swap`
+    ).then(r => r.text());
+    const urls = [...css.matchAll(/url\(['"]?([^'")\s]+\.(?:woff2?|ttf|otf))['"]?\)/g)].map(m => m[1]);
+    if (!urls.length) throw new Error(`Fuente no encontrada: ${family}`);
+    const buffer = await fetch(urls[urls.length - 1]).then(r => r.arrayBuffer());
+    const font = opentype.parse(buffer);
+    fontCache[family] = font;
+    return font;
+  }
+
+  function ensureSVGCanvas() {
+    if (svgData) return;
+    const doc = new DOMParser().parseFromString(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120" viewBox="0 0 400 120"></svg>',
+      'image/svg+xml'
+    );
+    svgData = { elements: [], groups: [], svgEl: doc.querySelector('svg'), width: 400, height: 120 };
+    svgFilename = 'texto';
+    hasFitCamera = false;
+    collapsedGroups.clear();
+    elementCount.textContent = '0 elem';
+    renderSVG2D();
+    buildElementsList();
+    initDimensions();
+    initThree();
+    rebuild3D();
+  }
+
+  async function addTextToSVG() {
+    const text = document.getElementById('text-input').value.trim();
+    const family = fontFamilySelect.value;
+    const fontSize = parseFloat(document.getElementById('font-size').value) || 40;
+    if (!text) return;
+
+    const addBtn = document.getElementById('add-text-btn');
+    addBtn.disabled = true;
+    setStatus('Cargando fuente…');
+
+    let font;
+    try {
+      font = await loadGoogleFont(family);
+    } catch (err) {
+      setStatus('Error al cargar fuente: ' + err.message);
+      addBtn.disabled = false;
+      return;
+    }
+
+    ensureSVGCanvas();
+
+    // Measure bbox with paths at origin to compute centering offset
+    const rawPaths = font.getPaths(text, 0, 0, fontSize);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    rawPaths.forEach(p => {
+      if (!p.commands || !p.commands.length) return;
+      try {
+        const bb = p.getBoundingBox();
+        if (bb.x2 > bb.x1) {
+          minX = Math.min(minX, bb.x1); minY = Math.min(minY, bb.y1);
+          maxX = Math.max(maxX, bb.x2); maxY = Math.max(maxY, bb.y2);
+        }
+      } catch (e) {}
+    });
+
+    if (!isFinite(minX)) { setStatus('Sin paths para este texto'); addBtn.disabled = false; return; }
+
+    const offsetX = svgData.width  / 2 - (minX + maxX) / 2;
+    const offsetY = svgData.height / 2 - (minY + maxY) / 2;
+    const paths = font.getPaths(text, offsetX, offsetY, fontSize);
+
+    const groupId    = `text_${Date.now()}`;
+    const groupLabel = `"${text}"`;
+    const newElements = [];
+
+    paths.forEach((p, i) => {
+      if (!p.commands || !p.commands.length) return;
+      const pathD = p.toPathData(2);
+      if (!pathD || pathD.trim() === '') return;
+
+      const elemId = `${groupId}_c${i}`;
+      const char   = [...text][i] || `_${i}`;
+
+      // Add <path> to the live SVG DOM
+      const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pathEl.setAttribute('d', pathD);
+      pathEl.setAttribute('fill', '#000000');
+      pathEl.setAttribute('data-elem-ref', elemId);
+      pathEl.classList.add('svg-selectable');
+      svgData.svgEl.appendChild(pathEl);
+
+      pathEl.addEventListener('click', ev => {
+        if (view2d.wasDragged) { view2d.wasDragged = false; return; }
+        ev.stopPropagation();
+        selectElement(elemId, ev.ctrlKey || ev.metaKey);
+      });
+
+      newElements.push({
+        id: elemId, tag: 'path',
+        label: char === ' ' ? '(espacio)' : char,
+        pathD, fill: '#000000', hasFill: true,
+        stroke: 'none', transform: '',
+        groupId, groupLabel, config: null, visible: true,
+      });
+    });
+
+    if (!newElements.length) { setStatus('Sin paths generados'); addBtn.disabled = false; return; }
+
+    svgData.elements.push(...newElements);
+    svgData.groups.push({ id: groupId, label: groupLabel, children: newElements.map(e => e.id) });
+    collapsedGroups.add(groupId);
+
+    elementCount.textContent = `${svgData.elements.length} elem`;
+    buildElementsList();
+    rebuild3D();
+    document.getElementById('text-input').value = '';
+    setStatus(`Texto añadido: "${text}" · ${newElements.length} paths`);
+    addBtn.disabled = false;
+  }
+
+  document.getElementById('add-text-btn').addEventListener('click', addTextToSVG);
+  document.getElementById('text-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addTextToSVG();
+  });
 })();

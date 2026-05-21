@@ -105,6 +105,13 @@
 
       <div id="views">
         <div id="view-2d" class="view active">
+          <div id="text-toolbar">
+            <span class="tt-label">T</span>
+            <select id="font-family"></select>
+            <input type="number" id="font-size" value="40" min="4" max="500" step="1" title="Tamaño (px SVG)">
+            <input type="text" id="text-input" placeholder="Escribe el texto…">
+            <button id="add-text-btn">Añadir</button>
+          </div>
           <div id="svg-container">
             <p class="hint center">Carga un archivo SVG para comenzar</p>
             <svg class="axis-gizmo-2d" viewBox="0 0 78 78" width="68" height="68" xmlns="http://www.w3.org/2000/svg">
@@ -159,6 +166,7 @@
     </main>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="svg-parser.js"></script>
   <script src="extrusion-engine.js"></script>
