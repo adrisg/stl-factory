@@ -50,9 +50,27 @@ const ExtrusionEngine = (() => {
       for (let i = 1; i < pts.length; i++) shapePath.lineTo(pts[i].x, pts[i].y);
     }
 
+    // Auto-detect winding from the largest subpath (shoelace formula).
+    // TrueType fonts → outer CW after Y-flip (isCCW=false).
+    // PostScript/CFF fonts → outer CCW after Y-flip (isCCW=true).
+    // Positive signed area = CCW in Y-up Three.js space.
+    let isCCW = false;
+    let maxArea = 0;
+    for (const { pts } of subpaths) {
+      if (pts.length < 3) continue;
+      let area = 0;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        area += pts[j].x * pts[i].y - pts[i].x * pts[j].y;
+      }
+      area /= 2;
+      if (Math.abs(area) > maxArea) {
+        maxArea = Math.abs(area);
+        isCCW = area > 0;
+      }
+    }
+
     try {
-      // isCCW=false: after Y-flip outer paths are CW, so CW = outer shape, CCW = hole
-      return shapePath.toShapes(false);
+      return shapePath.toShapes(isCCW);
     } catch (e) {
       console.warn('ShapePath.toShapes error:', e);
       return [];

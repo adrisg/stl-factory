@@ -12,16 +12,13 @@
     <aside id="sidebar">
       <div id="sidebar-header">
         <h1>SVG → STL</h1>
-        <label id="upload-btn" for="svg-input">
-          Cargar SVG
-          <input type="file" id="svg-input" accept=".svg" hidden>
-        </label>
+        <button id="add-element-btn">+ Agregar</button>
       </div>
 
       <div id="elements-panel">
         <h2>Elementos</h2>
         <div id="elements-list">
-          <p class="hint">Carga un SVG para ver sus elementos</p>
+          <p class="hint">Agrega un elemento para comenzar</p>
         </div>
       </div>
 
@@ -122,15 +119,8 @@
 
       <div id="views">
         <div id="view-2d" class="view active">
-          <div id="text-toolbar">
-            <span class="tt-label">T</span>
-            <select id="font-family"></select>
-            <input type="number" id="font-size" value="40" min="4" max="500" step="1" title="Tamaño (px SVG)">
-            <input type="text" id="text-input" placeholder="Escribe el texto…">
-            <button id="add-text-btn">Añadir</button>
-          </div>
           <div id="svg-container">
-            <p class="hint center">Carga un archivo SVG para comenzar</p>
+            <p class="hint center">Agrega un elemento para comenzar</p>
             <svg class="axis-gizmo-2d" viewBox="0 0 78 78" width="68" height="68" xmlns="http://www.w3.org/2000/svg">
               <rect x="1" y="1" width="76" height="76" rx="9" fill="rgba(0,0,0,0.5)"/>
               <circle cx="18" cy="60" r="2.8" fill="#aaa"/>
@@ -181,6 +171,97 @@
         <span id="element-count"></span>
       </div>
     </main>
+  </div>
+
+  <!-- ── Modal: Confirmación ── -->
+  <div id="confirm-modal" class="modal-overlay hidden">
+    <div class="modal confirm-modal-box">
+      <div class="modal-header">
+        <h2>¿Continuar?</h2>
+      </div>
+      <div class="confirm-body">
+        <p id="confirm-message"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-cancel-btn" id="confirm-cancel-btn">Cancelar</button>
+        <button class="modal-apply-btn" id="confirm-ok-btn">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Agregar elemento ── -->
+  <div id="add-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Agregar elemento</h2>
+        <button class="modal-close" id="modal-close-btn">✕</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-modal-tab="svg">SVG</button>
+        <button class="modal-tab" data-modal-tab="text">Texto</button>
+        <button class="modal-tab" data-modal-tab="shape">Figura</button>
+      </div>
+
+      <!-- SVG tab -->
+      <div class="modal-panel" id="modal-panel-svg">
+        <div class="modal-drop-zone" id="svg-drop-zone">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p>Arrastra un SVG aquí</p>
+          <span>o</span>
+          <label class="modal-file-btn">
+            Seleccionar archivo
+            <input type="file" id="modal-svg-input" accept=".svg" hidden>
+          </label>
+        </div>
+        <div id="svg-file-info" class="hidden">
+          <span class="file-badge" id="svg-file-name"></span>
+          <button class="file-clear-btn" id="svg-file-clear">✕</button>
+        </div>
+        <div class="modal-dim-row">
+          <div class="modal-field">
+            <label>Ancho (mm)</label>
+            <input type="number" id="modal-svg-width" min="0.1" max="9999" step="0.1" placeholder="—">
+          </div>
+          <button id="modal-scale-lock" class="scale-lock-btn active" title="Escala uniforme">
+            <svg class="lock-icon-locked" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <svg class="lock-icon-unlocked" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+          </button>
+          <div class="modal-field">
+            <label>Alto (mm)</label>
+            <input type="number" id="modal-svg-height" min="0.1" max="9999" step="0.1" placeholder="—">
+          </div>
+        </div>
+      </div>
+
+      <!-- Text tab -->
+      <div class="modal-panel hidden" id="modal-panel-text">
+        <div class="modal-field">
+          <label>Texto</label>
+          <input type="text" id="modal-text-input" placeholder="Escribe aquí…">
+        </div>
+        <div class="modal-field-row">
+          <div class="modal-field" style="flex:2">
+            <label>Fuente</label>
+            <select id="modal-font-family"></select>
+          </div>
+          <div class="modal-field" style="flex:1">
+            <label>Tamaño (px)</label>
+            <input type="number" id="modal-font-size" value="40" min="4" max="500" step="1">
+          </div>
+        </div>
+      </div>
+
+      <!-- Shape tab -->
+      <div class="modal-panel hidden" id="modal-panel-shape">
+        <div class="shape-grid" id="shape-grid"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="modal-cancel-btn" id="modal-cancel-btn">Cancelar</button>
+        <button class="modal-apply-btn" id="modal-apply-btn">Aplicar</button>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
