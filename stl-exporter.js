@@ -7,7 +7,7 @@ const STLExporter = (() => {
   function export3D(scene) {
     const meshes = [];
     scene.traverse(obj => {
-      if (obj.isMesh) meshes.push(obj);
+      if (obj.isMesh && !obj.userData.isSVGPlane) meshes.push(obj);
     });
 
     // Count total triangles
@@ -46,8 +46,11 @@ const STLExporter = (() => {
       const norm = geo.getAttribute('normal');
       const idx = geo.index;
 
+      // Convert Three.js Y-up to slicer Z-up: (x, y, z) → (x, -z, y)
       const getVec = (attr, i) => ({
-        x: attr.getX(i), y: attr.getY(i), z: attr.getZ(i)
+        x:  attr.getX(i),
+        y: -attr.getZ(i),
+        z:  attr.getY(i),
       });
 
       const writeFace = (v0, v1, v2, n) => {

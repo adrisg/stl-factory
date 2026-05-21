@@ -5,6 +5,7 @@
 (function () {
   // ── State ──────────────────────────────────────────────────────────────────
   let svgData = null;        // { elements, groups, svgEl, width, height }
+  let svgFilename = 'export'; // base name for STL export
   let selectedIds = new Set(); // element IDs currently selected
   let globalScale = 0.264583; // px → mm
   const collapsedGroups = new Set(); // group IDs collapsed in the list
@@ -92,6 +93,7 @@
   function loadSVG(svgString, filename) {
     try {
       svgData = SVGParser.parse(svgString);
+      svgFilename = filename.replace(/\.[^.]+$/, '');
       hasFitCamera = false;
       collapsedGroups.clear();
       svgData.groups.forEach(g => collapsedGroups.add(g.id));
@@ -564,6 +566,32 @@
 
   // ── Controls logic ─────────────────────────────────────────────────────────
 
+  // Adjusts globalScale so all configured elements fill the target Y (dimY).
+  // Uses path-space coords (scale=1) to avoid getBBox failures on hidden elements.
+  function rescaleToConfigured() {
+    const configured = svgData.elements.filter(el => el.config);
+    if (!configured.length) return;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    configured.forEach(el => {
+      const subpaths = ExtrusionEngine.debugShapes(el.pathD);
+      subpaths.forEach(sp => sp.pts.forEach(p => {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }));
+    });
+    if (!isFinite(minX) || maxY <= minY) return;
+
+    const targetY = parseFloat(dimY.value) || 30;
+    globalScale = targetY / (maxY - minY);
+    const newX = ((maxX - minX) * globalScale).toFixed(2);
+    dimX.value = newX;
+    dimX.dataset.base = newX;
+    dimY.dataset.base = String(targetY);
+  }
+
   applyBtn.addEventListener('click', () => {
     if (!svgData || selectedIds.size === 0) return;
 
@@ -590,6 +618,7 @@
       }
     });
 
+    rescaleToConfigured();
     setStatus(`Configurado: ${selectedIds.size} elemento${selectedIds.size > 1 ? 's' : ''}`);
     rebuild3D();
   });
@@ -664,11 +693,13 @@
   });
 
   function initDimensions() {
-    globalScale = 0.264583; // px → mm default; bbox will replace these values after first build
-    dimX.value = '';
-    dimY.value = '';
-    dimX.dataset.base = '';
-    dimY.dataset.base = '';
+    globalScale = 30 / svgData.height;
+    const w = (svgData.width * globalScale).toFixed(2);
+    const h = (30).toFixed(2);
+    dimX.value = w;
+    dimY.value = h;
+    dimX.dataset.base = w;
+    dimY.dataset.base = h;
     dimX.disabled = false;
     dimY.disabled = false;
   }
@@ -681,12 +712,14 @@
     dimY.value = (parseFloat(dimY.dataset.base) * newX / baseX).toFixed(2);
   });
 
-  // Apply on Enter / blur
+  // Apply on Enter / blur — update base so next edit is relative to the new size
   dimX.addEventListener('change', () => {
     const newX = parseFloat(dimX.value);
     const baseX = parseFloat(dimX.dataset.base);
     if (!newX || !baseX || !svgData) return;
     globalScale *= newX / baseX;
+    dimX.dataset.base = dimX.value;
+    dimY.dataset.base = dimY.value;
     rebuild3D();
   });
 
@@ -702,6 +735,8 @@
     const baseZ = parseFloat(dimY.dataset.base);
     if (!newY || !baseZ || !svgData) return;
     globalScale *= newY / baseZ;
+    dimX.dataset.base = dimX.value;
+    dimY.dataset.base = dimY.value;
     rebuild3D();
   });
 
@@ -732,7 +767,7 @@
     setTimeout(() => {
       try {
         const buf = STLExporter.export3D(scene);
-        STLExporter.download(buf, 'export.stl');
+        STLExporter.download(buf, svgFilename + '.stl');
         setStatus('STL exportado');
       } catch (err) {
         setStatus('Error al exportar: ' + err.message);
@@ -1064,6 +1099,7 @@
     pMesh.rotation.x = -Math.PI / 2;
     pMesh.renderOrder = -1;
     pMesh.visible = svgPlaneVisible;
+    pMesh.userData.isSVGPlane = true;
     svgPlane = pMesh;
     pivot.add(pMesh);
     loadSVGTexture(svgData.svgEl, tex => { pMat.map = tex; pMat.needsUpdate = true; render3D(); });
@@ -1079,13 +1115,6 @@
       pivot.position.set(-meshCenter.x, -meshBox.min.y, -meshCenter.z);
       pMesh.position.set(planeW / 2, -0.02, planeH / 2);
 
-      // Sync dimension inputs
-      const xSize = meshBox.max.x - meshBox.min.x;
-      const zSize = meshBox.max.z - meshBox.min.z;
-      dimX.dataset.base = String(xSize);
-      dimY.dataset.base = String(zSize);
-      dimX.value = xSize.toFixed(2);
-      dimY.value = zSize.toFixed(2);
 
       // Only fit camera on first build after loading a new SVG
       if (!hasFitCamera) {
@@ -1097,12 +1126,6 @@
         hasFitCamera = true;
       }
     } else {
-      // No meshes: show SVG canvas dimensions
-      dimX.dataset.base = String(planeW);
-      dimY.dataset.base = String(planeH);
-      dimX.value = planeW.toFixed(2);
-      dimY.value = planeH.toFixed(2);
-
       // No meshes: center plane on origin and fit camera to it
       pMesh.position.set(0, -0.02, 0);
       if (!hasFitCamera) {
