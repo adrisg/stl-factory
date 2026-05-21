@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG to STL Factory</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div id="sidebar-header">
+        <h1>SVG → STL</h1>
+        <label id="upload-btn" for="svg-input">
+          Cargar SVG
+          <input type="file" id="svg-input" accept=".svg" hidden>
+        </label>
+      </div>
+
+      <div id="elements-panel">
+        <h2>Elementos</h2>
+        <div id="elements-list">
+          <p class="hint">Carga un SVG para ver sus elementos</p>
+        </div>
+      </div>
+
+      <div id="selected-panel" class="hidden">
+        <h2>Configuración</h2>
+        <div id="selected-name" class="selected-label"></div>
+
+        <div class="control-group">
+          <label for="extrude-depth">Altura (mm)</label>
+          <input type="number" id="extrude-depth" value="0" min="-500" max="500" step="0.5">
+          <span class="hint-small">Positivo = arriba · Negativo = abajo</span>
+        </div>
+
+        <div class="control-group">
+          <label for="extrude-offset">Offset Z (mm)</label>
+          <input type="number" id="extrude-offset" value="0" min="-500" max="500" step="0.5">
+          <span class="hint-small">Altura de inicio de la extrusión</span>
+        </div>
+
+        <div class="control-group">
+          <label for="color-3d">Color 3D</label>
+          <div class="color-row">
+            <input type="color" id="color-3d" value="#888888">
+            <button id="color-from-svg" class="color-svg-btn" title="Usar color del SVG">SVG</button>
+          </div>
+        </div>
+
+        <button id="apply-btn">Aplicar</button>
+        <button id="reset-element-btn" class="secondary">Resetear</button>
+
+        <details id="debug-details">
+          <summary id="debug-summary">Debug path</summary>
+          <div id="debug-body">
+            <div class="debug-previews">
+              <div class="debug-col">
+                <span class="debug-label">Nativo (SVG)</span>
+                <canvas id="dbg-native" width="116" height="100"></canvas>
+              </div>
+              <div class="debug-col">
+                <span class="debug-label">Motor extrusión</span>
+                <canvas id="dbg-engine" width="116" height="100"></canvas>
+              </div>
+            </div>
+            <div id="debug-stats"></div>
+            <details class="debug-path-details">
+              <summary>Path D raw</summary>
+              <pre id="debug-path-d"></pre>
+            </details>
+          </div>
+        </details>
+      </div>
+
+      <div id="global-panel">
+        <h2>Global</h2>
+        <div class="control-group">
+          <label>Tamaño de salida (mm)</label>
+          <div class="dim-row">
+            <div class="dim-field">
+              <span class="dim-label">X</span>
+              <input type="number" id="dim-x" min="0.1" max="99999" step="0.1" placeholder="—" disabled>
+            </div>
+            <span class="dim-sep">×</span>
+            <div class="dim-field">
+              <span class="dim-label">Y</span>
+              <input type="number" id="dim-y" min="0.1" max="99999" step="0.1" placeholder="—" disabled>
+            </div>
+          </div>
+        </div>
+        <button id="export-btn">Exportar STL</button>
+        <button id="reset-all-btn" class="secondary">Resetear todo</button>
+      </div>
+    </aside>
+
+    <!-- Main viewport -->
+    <main id="main">
+      <div id="view-tabs">
+        <button class="tab-btn active" data-view="2d">Vista 2D</button>
+        <button class="tab-btn" data-view="3d">Vista 3D</button>
+        <button class="tab-btn" data-view="split">Dividida</button>
+      </div>
+
+      <div id="views">
+        <div id="view-2d" class="view active">
+          <div id="svg-container">
+            <p class="hint center">Carga un archivo SVG para comenzar</p>
+            <svg class="axis-gizmo-2d" viewBox="0 0 78 78" width="68" height="68" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="1" width="76" height="76" rx="9" fill="rgba(0,0,0,0.5)"/>
+              <circle cx="18" cy="60" r="2.8" fill="#aaa"/>
+              <line x1="18" y1="60" x2="55" y2="60" stroke="#e05555" stroke-width="2" stroke-linecap="round"/>
+              <polygon points="55,56.5 63,60 55,63.5" fill="#e05555"/>
+              <text x="66" y="60" font-size="11" fill="#e05555" font-family="monospace" font-weight="700" dominant-baseline="middle">X</text>
+              <line x1="18" y1="60" x2="18" y2="23" stroke="#44bb66" stroke-width="2" stroke-linecap="round"/>
+              <polygon points="14.5,23 18,15 21.5,23" fill="#44bb66"/>
+              <text x="18" y="9" font-size="11" fill="#44bb66" font-family="monospace" font-weight="700" text-anchor="middle" dominant-baseline="middle">Y</text>
+            </svg>
+          </div>
+        </div>
+        <div id="view-3d" class="view">
+          <div id="three-viewport">
+            <div id="gizmo-3d-bg"></div>
+            <canvas id="three-canvas"></canvas>
+            <div id="view3d-toolbar">
+              <button id="mesh-transparent-btn" title="Geometría transparente">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke-dasharray="4 2"/>
+                </svg>
+              </button>
+              <button id="svg-plane-btn" title="Mostrar / ocultar SVG de referencia">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+              </button>
+            </div>
+            <button id="home-btn" title="Vista inicial">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/>
+                <polyline points="9 21 9 13 15 13 15 21"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="view-split" class="view split-view">
+          <div id="split-2d" class="split-pane"></div>
+          <div id="split-divider"></div>
+          <div id="split-3d" class="split-pane"></div>
+        </div>
+      </div>
+
+      <div id="status-bar">
+        <span id="status-msg">Listo</span>
+        <span id="element-count"></span>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="svg-parser.js"></script>
+  <script src="extrusion-engine.js"></script>
+  <script src="stl-exporter.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
