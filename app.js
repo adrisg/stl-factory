@@ -9,6 +9,7 @@
   let selectedIds = new Set(); // element IDs currently selected
   let globalScale = 0.264583; // px → mm
   const collapsedGroups = new Set(); // group IDs collapsed in the list
+  let currentTextGroupId = null; // groupId of the text group shown in the edit panel
 
   // Eye icons (Feather-style SVG)
   const ICO_EYE_OPEN = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
@@ -375,7 +376,10 @@
 
   function updateSelectionVisuals() {
     document.querySelectorAll('.element-item').forEach(d => d.classList.remove('selected'));
-    document.querySelectorAll('.svg-selectable').forEach(s => s.classList.remove('selected'));
+    document.querySelectorAll('.svg-selectable').forEach(s => {
+      s.classList.remove('selected');
+      s.classList.remove('text-group-selected');
+    });
 
     let lastListItem = null;
     selectedIds.forEach(id => {
@@ -391,13 +395,18 @@
     // Scroll list to last selected item
     if (lastListItem) lastListItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
-    // Highlight group header when all its children are selected
+    // Highlight group header when all its children are selected; mark text groups as draggable
     svgData?.groups.forEach(group => {
       if (group.children.length && group.children.every(id => selectedIds.has(id))) {
         document.querySelector(`[data-group-id="${group.id}"]`)?.classList.add('selected');
+        if (group.isTextGroup) {
+          group.children.forEach(id => {
+            const s = svgContainer.querySelector(`[data-elem-ref="${id}"]`);
+            if (s) s.classList.add('text-group-selected');
+          });
+        }
       }
     });
-
   }
 
   function updateDebugPanel(id) {
@@ -506,32 +515,59 @@
   }
 
   function updatePanel() {
+    const tgEdit = document.getElementById('text-group-edit');
+
     if (selectedIds.size === 0) {
       selectedPanel.classList.add('hidden');
+      tgEdit.classList.add('hidden');
+      currentTextGroupId = null;
       return;
     }
     selectedPanel.classList.remove('hidden');
+
+    // Check if a complete group (text or not) is selected
+    const matchedGroup = svgData?.groups.find(g =>
+      g.children.length > 0 &&
+      g.children.length === selectedIds.size &&
+      g.children.every(id => selectedIds.has(id))
+    );
+
+    if (matchedGroup?.isTextGroup) {
+      currentTextGroupId = matchedGroup.id;
+      document.getElementById('tg-text').value = matchedGroup.textContent || '';
+      document.getElementById('tg-font').value = matchedGroup.fontFamily || GOOGLE_FONTS[0];
+      document.getElementById('tg-size').value = matchedGroup.fontSize || 40;
+      tgEdit.classList.remove('hidden');
+    } else {
+      currentTextGroupId = null;
+      tgEdit.classList.add('hidden');
+    }
 
     if (selectedIds.size === 1) {
       const id = [...selectedIds][0];
       const el = svgData.elements.find(e => e.id === id);
       selectedName.textContent = el?.label || id;
       fillPanelFromConfig(el?.config || {});
-      // Refresh debug panel if it's open
       if (document.getElementById('debug-details')?.open) updateDebugPanel(id);
+      // single element of a text group: also show edit panel if group is fully selected
+      if (!matchedGroup?.isTextGroup && el?.groupId) {
+        const grp = svgData.groups.find(g => g.id === el.groupId && g.isTextGroup &&
+          g.children.every(cid => selectedIds.has(cid)));
+        if (grp) {
+          currentTextGroupId = grp.id;
+          document.getElementById('tg-text').value = grp.textContent || '';
+          document.getElementById('tg-font').value = grp.fontFamily || GOOGLE_FONTS[0];
+          document.getElementById('tg-size').value = grp.fontSize || 40;
+          tgEdit.classList.remove('hidden');
+        }
+      }
       return;
     }
 
-    // Multiple selected: check if they match a complete group
-    const matchedGroup = svgData?.groups.find(g =>
-      g.children.length === selectedIds.size &&
-      g.children.every(id => selectedIds.has(id))
-    );
     selectedName.textContent = matchedGroup
       ? `${matchedGroup.label || matchedGroup.id} (${selectedIds.size} elem)`
       : `${selectedIds.size} elementos`;
 
-    // Show config of first selected as reference
     const firstEl = svgData.elements.find(e => selectedIds.has(e.id));
     fillPanelFromConfig(firstEl?.config || {});
   }
@@ -1171,11 +1207,13 @@
 
   const fontCache = {};
   const fontFamilySelect = document.getElementById('font-family');
+  const tgFontSelect     = document.getElementById('tg-font');
   GOOGLE_FONTS.forEach(f => {
-    const opt = document.createElement('option');
-    opt.value = f;
-    opt.textContent = f;
-    fontFamilySelect.appendChild(opt);
+    [fontFamilySelect, tgFontSelect].forEach(sel => {
+      const opt = document.createElement('option');
+      opt.value = f; opt.textContent = f;
+      sel.appendChild(opt);
+    });
   });
 
   async function loadGoogleFont(family) {
@@ -1198,6 +1236,125 @@
       } catch (e) { lastErr = e; }
     }
     throw new Error(`Fuente no encontrada: ${family}. ${lastErr?.message ?? ''}`);
+  }
+
+  // Translates all absolute coordinates in an SVG path d string by (dx, dy).
+  // opentype.js only emits M, L, C, Q, Z (all absolute), so pairs of numbers
+  // after a command letter are always (x, y) pairs.
+  function translatePathD(d, dx, dy) {
+    return d.replace(/([MLCQ])((?:[\s,]*-?[\d.]+(?:e[+-]?\d+)?)+)/gi, (_, cmd, rest) => {
+      const nums = rest.trim().split(/[\s,]+/).map(Number);
+      for (let i = 0; i < nums.length; i += 2) {
+        nums[i]   += dx;
+        if (i + 1 < nums.length) nums[i + 1] += dy;
+      }
+      return cmd + nums.map(n => parseFloat(n.toFixed(3))).join(' ');
+    });
+  }
+
+  // Starts a drag-to-move operation for a text group.
+  // gEl: the <g> SVG element wrapping the group's paths.
+  function startGroupMove(groupId, gEl, ev) {
+    const startX = ev.clientX, startY = ev.clientY;
+
+    function onMove(e) {
+      const dx = (e.clientX - startX) / view2d.scale;
+      const dy = (e.clientY - startY) / view2d.scale;
+      gEl.setAttribute('transform', `translate(${dx},${dy})`);
+    }
+
+    function onUp(e) {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      const dx = (e.clientX - startX) / view2d.scale;
+      const dy = (e.clientY - startY) / view2d.scale;
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        // Bake translation into each element's pathD
+        const group = svgData?.groups.find(g => g.id === groupId);
+        group?.children.forEach(childId => {
+          const el = svgData.elements.find(e => e.id === childId);
+          if (!el) return;
+          el.pathD = translatePathD(el.pathD, dx, dy);
+          const domPath = svgData.svgEl.querySelector(`[data-elem-ref="${childId}"]`);
+          if (domPath) domPath.setAttribute('d', el.pathD);
+        });
+        gEl.setAttribute('transform', 'translate(0,0)');
+        rebuild3D();
+      }
+      view2d.wasDragged = true;
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // Creates path DOM elements and element data objects for a text string.
+  // Paths are centered at (centerX, centerY) in SVG coordinates.
+  // Returns { elements, gEl }.
+  function generateTextPaths(font, text, fontSize, centerX, centerY, groupId, groupLabel) {
+    const rawPaths = font.getPaths(text, 0, 0, fontSize);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    rawPaths.forEach(p => {
+      if (!p.commands?.length) return;
+      try {
+        const bb = p.getBoundingBox();
+        if (bb.x2 > bb.x1) {
+          minX = Math.min(minX, bb.x1); minY = Math.min(minY, bb.y1);
+          maxX = Math.max(maxX, bb.x2); maxY = Math.max(maxY, bb.y2);
+        }
+      } catch (e) {}
+    });
+
+    if (!isFinite(minX)) return null;
+
+    const offsetX = centerX - (minX + maxX) / 2;
+    const offsetY = centerY - (minY + maxY) / 2;
+    const paths = font.getPaths(text, offsetX, offsetY, fontSize);
+
+    const gEl = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    gEl.setAttribute('data-text-group', groupId);
+    svgData.svgEl.appendChild(gEl);
+
+    const newElements = [];
+    paths.forEach((p, i) => {
+      if (!p.commands?.length) return;
+      const pathD = p.toPathData(2);
+      if (!pathD?.trim()) return;
+
+      const elemId = `${groupId}_c${i}`;
+      const char   = [...text][i] || `_${i}`;
+
+      const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pathEl.setAttribute('d', pathD);
+      pathEl.setAttribute('fill', '#000000');
+      pathEl.setAttribute('data-elem-ref', elemId);
+      pathEl.classList.add('svg-selectable');
+      gEl.appendChild(pathEl);
+
+      pathEl.addEventListener('click', ev => {
+        if (view2d.wasDragged) { view2d.wasDragged = false; return; }
+        ev.stopPropagation();
+        selectElement(elemId, ev.ctrlKey || ev.metaKey);
+      });
+
+      pathEl.addEventListener('mousedown', ev => {
+        const grp = svgData?.groups.find(g => g.id === groupId);
+        if (!grp?.isTextGroup) return;
+        if (!grp.children.every(id => selectedIds.has(id))) return;
+        ev.stopPropagation(); // prevent canvas pan
+        startGroupMove(groupId, gEl, ev);
+      });
+
+      newElements.push({
+        id: elemId, tag: 'path',
+        label: char === ' ' ? '(espacio)' : char,
+        pathD, fill: '#000000', hasFill: true,
+        stroke: 'none', transform: '',
+        groupId, groupLabel, config: null, visible: true,
+      });
+    });
+
+    return newElements.length ? { elements: newElements, gEl } : null;
   }
 
   function ensureSVGCanvas() {
@@ -1239,65 +1396,20 @@
 
     ensureSVGCanvas();
 
-    // Measure bbox with paths at origin to compute centering offset
-    const rawPaths = font.getPaths(text, 0, 0, fontSize);
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    rawPaths.forEach(p => {
-      if (!p.commands || !p.commands.length) return;
-      try {
-        const bb = p.getBoundingBox();
-        if (bb.x2 > bb.x1) {
-          minX = Math.min(minX, bb.x1); minY = Math.min(minY, bb.y1);
-          maxX = Math.max(maxX, bb.x2); maxY = Math.max(maxY, bb.y2);
-        }
-      } catch (e) {}
-    });
-
-    if (!isFinite(minX)) { setStatus('Sin paths para este texto'); addBtn.disabled = false; return; }
-
-    const offsetX = svgData.width  / 2 - (minX + maxX) / 2;
-    const offsetY = svgData.height / 2 - (minY + maxY) / 2;
-    const paths = font.getPaths(text, offsetX, offsetY, fontSize);
-
     const groupId    = `text_${Date.now()}`;
     const groupLabel = `"${text}"`;
-    const newElements = [];
+    const result = generateTextPaths(font, text, fontSize,
+      svgData.width / 2, svgData.height / 2, groupId, groupLabel);
 
-    paths.forEach((p, i) => {
-      if (!p.commands || !p.commands.length) return;
-      const pathD = p.toPathData(2);
-      if (!pathD || pathD.trim() === '') return;
-
-      const elemId = `${groupId}_c${i}`;
-      const char   = [...text][i] || `_${i}`;
-
-      // Add <path> to the live SVG DOM
-      const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      pathEl.setAttribute('d', pathD);
-      pathEl.setAttribute('fill', '#000000');
-      pathEl.setAttribute('data-elem-ref', elemId);
-      pathEl.classList.add('svg-selectable');
-      svgData.svgEl.appendChild(pathEl);
-
-      pathEl.addEventListener('click', ev => {
-        if (view2d.wasDragged) { view2d.wasDragged = false; return; }
-        ev.stopPropagation();
-        selectElement(elemId, ev.ctrlKey || ev.metaKey);
-      });
-
-      newElements.push({
-        id: elemId, tag: 'path',
-        label: char === ' ' ? '(espacio)' : char,
-        pathD, fill: '#000000', hasFill: true,
-        stroke: 'none', transform: '',
-        groupId, groupLabel, config: null, visible: true,
-      });
-    });
-
-    if (!newElements.length) { setStatus('Sin paths generados'); addBtn.disabled = false; return; }
+    if (!result) { setStatus('Sin paths para este texto'); addBtn.disabled = false; return; }
+    const { elements: newElements } = result;
 
     svgData.elements.push(...newElements);
-    svgData.groups.push({ id: groupId, label: groupLabel, children: newElements.map(e => e.id) });
+    svgData.groups.push({
+      id: groupId, label: groupLabel,
+      children: newElements.map(e => e.id),
+      isTextGroup: true, textContent: text, fontFamily: family, fontSize,
+    });
     collapsedGroups.add(groupId);
 
     elementCount.textContent = `${svgData.elements.length} elem`;
@@ -1308,8 +1420,89 @@
     addBtn.disabled = false;
   }
 
+  async function updateTextGroupFromPanel() {
+    if (!currentTextGroupId) return;
+    const group = svgData?.groups.find(g => g.id === currentTextGroupId);
+    if (!group?.isTextGroup) return;
+
+    const newText   = document.getElementById('tg-text').value.trim();
+    const newFamily = document.getElementById('tg-font').value;
+    const newSize   = parseFloat(document.getElementById('tg-size').value) || 40;
+    if (!newText) return;
+
+    const btn = document.getElementById('tg-update-btn');
+    btn.disabled = true;
+    setStatus('Cargando fuente…');
+
+    let font;
+    try {
+      font = await loadGoogleFont(newFamily);
+    } catch (err) {
+      setStatus('Error al cargar fuente: ' + err.message);
+      btn.disabled = false;
+      return;
+    }
+
+    // Compute current center of the group from its paths' bboxes
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    group.children.forEach(childId => {
+      const el = svgData.elements.find(e => e.id === childId);
+      if (!el) return;
+      ExtrusionEngine.debugShapes(el.pathD).forEach(sp =>
+        sp.pts.forEach(p => {
+          minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+        })
+      );
+    });
+    const centerX = isFinite(minX) ? (minX + maxX) / 2 : svgData.width  / 2;
+    const centerY = isFinite(minY) ? (minY + maxY) / 2 : svgData.height / 2;
+
+    // Remove old <g> wrapper and its paths from DOM
+    svgData.svgEl.querySelector(`g[data-text-group="${currentTextGroupId}"]`)?.remove();
+    // Remove old elements from data
+    svgData.elements = svgData.elements.filter(e => !group.children.includes(e.id));
+
+    // Generate new paths centered at the same position
+    const newGroupLabel = `"${newText}"`;
+    const result = generateTextPaths(font, newText, newSize,
+      centerX, centerY, currentTextGroupId, newGroupLabel);
+
+    if (!result) {
+      setStatus('Sin paths para el nuevo texto');
+      btn.disabled = false;
+      return;
+    }
+    const { elements: newElements } = result;
+
+    // Update group metadata and children
+    group.label       = newGroupLabel;
+    group.textContent = newText;
+    group.fontFamily  = newFamily;
+    group.fontSize    = newSize;
+    group.children    = newElements.map(e => e.id);
+
+    svgData.elements.push(...newElements);
+
+    // Keep the group selected
+    selectedIds.clear();
+    newElements.forEach(e => selectedIds.add(e.id));
+
+    elementCount.textContent = `${svgData.elements.length} elem`;
+    buildElementsList();
+    updateSelectionVisuals();
+    updatePanel();
+    rebuild3D();
+    setStatus(`Texto actualizado: "${newText}" · ${newElements.length} paths`);
+    btn.disabled = false;
+  }
+
   document.getElementById('add-text-btn').addEventListener('click', addTextToSVG);
   document.getElementById('text-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') addTextToSVG();
+  });
+  document.getElementById('tg-update-btn').addEventListener('click', updateTextGroupFromPanel);
+  document.getElementById('tg-text').addEventListener('keydown', e => {
+    if (e.key === 'Enter') updateTextGroupFromPanel();
   });
 })();

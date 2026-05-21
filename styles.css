@@ -678,6 +678,51 @@ button.secondary { background: var(--border); color: var(--text); }
 /* svg-container fills remaining height below toolbar */
 #view-2d > #svg-container { flex: 1; height: auto; min-height: 0; }
 
+/* Text group edit panel */
+.panel-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 10px 0 8px;
+}
+#tg-text {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+#tg-font {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+#tg-size {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+#tg-update-btn {
+  width: 100%;
+  margin-top: 6px;
+  background: var(--accent2);
+  color: white;
+}
+/* Grab cursor on SVG paths that belong to a selected text group */
+.svg-selectable.text-group-selected { cursor: grab; }
+.svg-selectable.text-group-selected:active { cursor: grabbing; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

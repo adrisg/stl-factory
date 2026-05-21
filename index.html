@@ -52,6 +52,23 @@
         <button id="apply-btn">Aplicar</button>
         <button id="reset-element-btn" class="secondary">Resetear</button>
 
+        <div id="text-group-edit" class="hidden">
+          <hr class="panel-divider">
+          <div class="control-group">
+            <label for="tg-text">Texto</label>
+            <input type="text" id="tg-text">
+          </div>
+          <div class="control-group">
+            <label for="tg-font">Fuente</label>
+            <select id="tg-font"></select>
+          </div>
+          <div class="control-group">
+            <label for="tg-size">Tamaño (px)</label>
+            <input type="number" id="tg-size" min="4" max="500" step="1" value="40">
+          </div>
+          <button id="tg-update-btn">Actualizar texto</button>
+        </div>
+
         <details id="debug-details">
           <summary id="debug-summary">Debug path</summary>
           <div id="debug-body">
