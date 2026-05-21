@@ -1180,15 +1180,24 @@
 
   async function loadGoogleFont(family) {
     if (fontCache[family]) return fontCache[family];
-    const css = await fetch(
-      `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}&display=swap`
-    ).then(r => r.text());
-    const urls = [...css.matchAll(/url\(['"]?([^'")\s]+\.(?:woff2?|ttf|otf))['"]?\)/g)].map(m => m[1]);
-    if (!urls.length) throw new Error(`Fuente no encontrada: ${family}`);
-    const buffer = await fetch(urls[urls.length - 1]).then(r => r.arrayBuffer());
-    const font = opentype.parse(buffer);
-    fontCache[family] = font;
-    return font;
+    const pkgId = family.toLowerCase().replace(/\s+/g, '-');
+    // fontsource CDN serves WOFF (not WOFF2), which opentype.js supports without Brotli decompressor
+    const urls = [
+      `https://cdn.jsdelivr.net/npm/@fontsource/${pkgId}/files/${pkgId}-latin-400-normal.woff`,
+      `https://cdn.jsdelivr.net/npm/@fontsource/${pkgId}/files/${pkgId}-400-normal.woff`,
+    ];
+    let lastErr;
+    for (const url of urls) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const buffer = await r.arrayBuffer();
+        const font = opentype.parse(buffer);
+        fontCache[family] = font;
+        return font;
+      } catch (e) { lastErr = e; }
+    }
+    throw new Error(`Fuente no encontrada: ${family}. ${lastErr?.message ?? ''}`);
   }
 
   function ensureSVGCanvas() {
