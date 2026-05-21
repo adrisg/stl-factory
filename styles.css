@@ -373,6 +373,11 @@ button.secondary { background: var(--border); color: var(--text); }
   position: relative;
   cursor: grab;
   user-select: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.11) 1px, transparent 1px);
 }
 #svg-container.grabbing { cursor: grabbing; }
 #svg-wrapper {

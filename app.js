@@ -87,6 +87,25 @@
     svgEl.style.display = 'block';
     svgEl.style.overflow = 'visible';
 
+    // Origin axis lines — inserted before content so they render below everything
+    if (!svgEl.querySelector('#grid-axes')) {
+      const axesG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      axesG.id = 'grid-axes';
+      axesG.setAttribute('pointer-events', 'none');
+      function mkAxis(x1, y1, x2, y2, color) {
+        const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+        l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+        l.setAttribute('stroke', color);
+        l.setAttribute('stroke-width', '1.5');
+        l.setAttribute('vector-effect', 'non-scaling-stroke');
+        return l;
+      }
+      axesG.appendChild(mkAxis(-99999, 0, 99999, 0, 'rgba(224,85,85,0.55)'));   // X axis
+      axesG.appendChild(mkAxis(0, -99999, 0, 99999, 'rgba(68,187,102,0.55)')); // Y axis
+      svgEl.insertBefore(axesG, svgEl.firstChild);
+    }
+
     svgEl.addEventListener('click', () => {
       if (view2d.wasDragged) { view2d.wasDragged = false; return; }
       selectedIds.clear();
@@ -240,6 +259,19 @@
     const wrapper = document.getElementById('svg-wrapper');
     if (wrapper) wrapper.style.transform =
       `translate(${view2d.tx}px, ${view2d.ty}px) scale(${view2d.scale})`;
+
+    // Infinite grid that follows pan/zoom: minor every 50 SVG px, major every 250
+    const GRID = 50;
+    const gs   = GRID * view2d.scale;
+    const gs5  = gs * 5;
+    const ox   = ((view2d.tx % gs)  + gs)  % gs;
+    const oy   = ((view2d.ty % gs)  + gs)  % gs;
+    const ox5  = ((view2d.tx % gs5) + gs5) % gs5;
+    const oy5  = ((view2d.ty % gs5) + gs5) % gs5;
+    svgContainer.style.backgroundSize =
+      `${gs}px ${gs}px, ${gs}px ${gs}px, ${gs5}px ${gs5}px, ${gs5}px ${gs5}px`;
+    svgContainer.style.backgroundPosition =
+      `${ox}px ${oy}px, ${ox}px ${oy}px, ${ox5}px ${oy5}px, ${ox5}px ${oy5}px`;
   }
 
   function autoFit2D() {
