@@ -3,7 +3,9 @@ services:
     image: nginx:alpine
     ports:
       - "8080:80"
+    environment:
+      - NPM_IP=${NPM_IP}
     volumes:
       - .:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx.conf:/etc/nginx/templates/default.conf.template:ro
     restart: unless-stopped
