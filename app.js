@@ -36,8 +36,11 @@
   const selectedName  = document.getElementById('selected-name');
   const applyBtn      = document.getElementById('apply-btn');
   const resetElemBtn  = document.getElementById('reset-element-btn');
-  const exportBtn     = document.getElementById('export-btn');
-  const resetAllBtn   = document.getElementById('reset-all-btn');
+  const exportBtn       = document.getElementById('export-btn');
+  const saveProjectBtn  = document.getElementById('save-project-btn');
+  const loadProjectBtn  = document.getElementById('load-project-btn');
+  const loadProjectInput = document.getElementById('load-project-input');
+  const resetAllBtn     = document.getElementById('reset-all-btn');
   const statusMsg     = document.getElementById('status-msg');
   const elementCount  = document.getElementById('element-count');
   const dimX          = document.getElementById('dim-x');
@@ -923,6 +926,113 @@
       } catch (err) { setStatus('Error al exportar: ' + err.message); console.error(err); }
     }, 50);
   });
+
+  // ── Project save / load (.sts) ─────────────────────────────────────────────
+  saveProjectBtn.addEventListener('click', saveProject);
+  loadProjectBtn.addEventListener('click', () => loadProjectInput.click());
+  loadProjectInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) loadProject(file);
+    e.target.value = '';
+  });
+
+  async function saveProject() {
+    if (!svgData) { setStatus('No hay proyecto que guardar'); return; }
+    setStatus('Guardando proyecto…');
+    try {
+      const svgClone = svgData.svgEl.cloneNode(true);
+      svgClone.querySelector('#grid-axes')?.remove();
+      svgClone.querySelector('#mh-layer')?.remove();
+      const svgString = new XMLSerializer().serializeToString(svgClone);
+
+      const projectData = {
+        version: '1.0',
+        filename: svgFilename,
+        globalScale,
+        dimX:     parseFloat(dimX.value),
+        dimY:     parseFloat(dimY.value),
+        dimXBase: parseFloat(dimX.dataset.base) || parseFloat(dimX.value),
+        dimYBase: parseFloat(dimY.dataset.base) || parseFloat(dimY.value),
+        svgWidth:  svgData.width,
+        svgHeight: svgData.height,
+        elements: svgData.elements.map(el => ({
+          id: el.id, tag: el.tag, label: el.label,
+          pathD: el.pathD, fill: el.fill, hasFill: el.hasFill,
+          stroke: el.stroke, groupId: el.groupId, groupLabel: el.groupLabel,
+          config: el.config ? { ...el.config } : null,
+          visible: el.visible,
+        })),
+        groups: svgData.groups.map(g => ({
+          id: g.id, label: g.label,
+          children:    [...(g.children    || [])],
+          subGroupIds: [...(g.subGroupIds || [])],
+          parentGroupId: g.parentGroupId ?? null,
+          isTextGroup: g.isTextGroup  || false,
+          groupType:   g.groupType    || 'svg',
+          textContent: g.textContent,
+          fontFamily:  g.fontFamily,
+          fontSize:    g.fontSize,
+        })),
+      };
+
+      const zip = new JSZip();
+      zip.file('canvas.svg',    svgString);
+      zip.file('project.json',  JSON.stringify(projectData, null, 2));
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = (svgFilename || 'proyecto') + '.sts';
+      a.click(); URL.revokeObjectURL(url);
+      setStatus('Proyecto guardado');
+    } catch (err) { setStatus('Error al guardar: ' + err.message); console.error(err); }
+  }
+
+  async function loadProject(file) {
+    setStatus('Cargando proyecto…');
+    try {
+      const zip         = await JSZip.loadAsync(file);
+      const projectJson = await zip.file('project.json')?.async('text');
+      const svgString   = await zip.file('canvas.svg')?.async('text');
+      if (!projectJson || !svgString) throw new Error('Archivo .sts inválido o corrupto');
+
+      const p = JSON.parse(projectJson);
+
+      const doc      = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+      const newSvgEl = document.importNode(doc.querySelector('svg'), true);
+      newSvgEl.querySelector('#grid-axes')?.remove();
+      newSvgEl.querySelector('#mh-layer')?.remove();
+
+      selectedIds.clear();
+      collapsedGroups.clear();
+      currentTextGroupId = null;
+      hasFitCamera       = false;
+
+      svgData = {
+        svgEl:    newSvgEl,
+        width:    p.svgWidth,
+        height:   p.svgHeight,
+        elements: p.elements,
+        groups:   p.groups,
+      };
+      svgFilename  = p.filename || 'proyecto';
+      globalScale  = p.globalScale;
+
+      const fmt = v => isFinite(v) ? parseFloat(v).toFixed(2) : '';
+      dimX.value        = fmt(p.dimX);
+      dimY.value        = fmt(p.dimY);
+      dimX.dataset.base = fmt(p.dimXBase || p.dimX);
+      dimY.dataset.base = fmt(p.dimYBase || p.dimY);
+      dimX.disabled = false; dimY.disabled = false;
+
+      elementCount.textContent = `${svgData.elements.length} elem`;
+      renderSVG2D();
+      buildElementsList();
+      updatePanel();
+      initThree();
+      rebuild3D();
+      setStatus(`Proyecto cargado: "${svgFilename}" · ${svgData.elements.length} elementos`);
+    } catch (err) { setStatus('Error al cargar proyecto: ' + err.message); console.error(err); }
+  }
 
   // ── Split divider ──────────────────────────────────────────────────────────
   (function () {
