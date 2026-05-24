@@ -321,6 +321,30 @@ button:hover { opacity: 0.85; }
 #apply-btn, #export-btn { background: var(--accent); color: white; }
 button.secondary { background: var(--border); color: var(--text); }
 
+.project-btns {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.project-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 7px 6px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.15s;
+  margin-bottom: 0;
+}
+.project-btn:hover { background: var(--accent2); color: white; opacity: 1; }
+
 .hidden { display: none !important; }
 .hint { color: var(--text-dim); font-size: 0.85rem; }
 .hint.center { text-align: center; margin-top: 40px; }
